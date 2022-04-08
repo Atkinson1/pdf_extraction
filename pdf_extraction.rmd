@@ -1,0 +1,103 @@
+---
+title: "PDF Extraction (Part 1: Text)"
+author: "Ryan Atkinson"
+date: "`r lubridate::today()`"
+output:
+  pdf_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+***
+## A brief introduction to pdf extraction, tokenization, data type conversion, and cleaning methods
+
+```{r Required libraries, message = FALSE, warning = FALSE}
+# install.packages(c("tidyverse", "rJava", "tabulizer", "tokenizers", "janitor", "knitr", "wordcloud"))
+
+library(tidyverse)
+library(rJava)
+library(tabulizer)
+library(tokenizers)
+library(janitor)
+library(knitr)
+library(wordcloud)
+library(tidytext)
+```
+
+
+```{r Reading in pdf, echo = FALSE, warning = FALSE}
+covid_turnover <- extract_text("as-the-covid-19-pandemic-affects-the-nation-hires-and-turnover-reach-record-highs-in-2020.pdf")
+```
+
+```{r Conversion and cleaning}
+# turns strings into vector of strings
+covid_turnover_vec <- covid_turnover %>% as_vector()
+# collapses strings into vector of one string
+covid_vec <- str_c(covid_turnover_vec, "", collapse = " ")
+```
+
+#### Partitioning the data from the pdf into complete sentences as a tibble
+
+$\vspace{.1cm}$
+
+Below are the first ten complete sentences pulled from the pdf. 
+The pdf is from the Bureau of Labor Statistics, Monthly Labor Review, for June 2021.
+
+```{r Partition into df of complete sentences}
+# partition vector of a string into complete sentences
+covid_vec_sent <- covid_vec %>% tokenize_sentences()
+# turn sentences into a tibble for analysis
+token_df_sent <- covid_vec_sent %>% as_vector %>% as_tibble() %>% rename(., sentences = value)
+head(token_df_sent, 10) %>% kable()
+```
+$\vspace{1.3cm}$
+
+#### Partitioning the data from the pdf into individual tokens
+
+$\vspace{.1cm}$
+
+The data below have been "tokenized." In brief, a token is the string of characters delineating a word.
+After tokenizing, "stop words" -- words like articles, conjunctions, and related filler words -- are removed.
+Lastly, instances of a word within a document and the proportion of that word within the whole documented are printed.
+
+
+```{r Partition into df of individual words}
+covid_vec_word <- covid_vec %>% tokenize_words()
+covid_word_df <- covid_vec_word %>% as_vector %>% as_tibble()
+# covid_word_df %>% n_distinct()
+# covid_word_df %>% count(value)               
+```
+
+```{r Tokens, echo = FALSE, warning = FALSE, error=FALSE}
+covid_df_no_dig <- str_remove_all(covid_word_df$value, "[[:digit:]]") # takes a digit that occurs at least once or more
+covid_df_no_dig <- covid_df_no_dig %>% str_c(collapse = " ") %>% # take character vector, collapse by space
+  str_remove_all(., "\\.") %>% # remove all periods
+  str_remove_all(., "\\,") %>% # remove all commas
+  str_replace_all(., "[[:space:]]+", " ") # remove all spaces that occur once or more
+
+clean_strings <- str_split(covid_df_no_dig, " ") %>% unlist() %>% tibble() # convert to tibble
+clean_strings <- rename(clean_strings, names = .) # rename column to names
+inst <- clean_strings %>% group_by(names) %>% summarize(instance_of_word = n()) %>% # get number of instances word appears
+  mutate(prop = (instance_of_word)/sum(instance_of_word)*100) %>% arrange(desc(prop)) # get proportion of word
+inst <- rename(inst, word = names) # rename for anti-join, which will be used to remove stop_words
+inst <- anti_join(inst, stop_words, by = "word") # anti_join to remove stop_words
+
+# table of top ten words
+head(inst, 10) %>% kable(caption = "Words, Counts, and Proportions", align = "c")
+```
+#### Wordcloud
+
+$\vspace{.1cm}$
+
+A wordcloud of the most common words within the documented is printed.
+
+$\vspace{.1cm}$
+
+```{r Wordcloud, warning = FALSE,echo = FALSE}
+# wordcloud of most popular words
+wordcloud(words = inst$word, freq = inst$prop, 
+          min.freq = 20, max.words = 50, 
+          random.order = FALSE,
+          colors = brewer.pal(8, "Dark2"))
+
+```

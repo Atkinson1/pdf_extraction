@@ -1,0 +1,61 @@
+---
+title: "PDF Extraction (Part 2: Tables)"
+author: "Ryan Atkinson"
+date: "`r lubridate::today()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+***
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r Required libraries, message = FALSE, warning = FALSE, echo = FALSE}
+# install.packages(c("tidyverse", "rJava", "tabulizer", "janitor", "knitr"))
+
+library(tidyverse)
+library(rJava)
+library(tabulizer)
+library(janitor)
+library(knitr)
+```
+
+```{r pulling tables from pdf}
+covid_turnover_tab <- extract_tables("as-the-covid-19-pandemic-affects-the-nation-hires-and-turnover-reach-record-highs-in-2020.pdf")
+```
+
+```{r example of extracting and cleaning fourth table, warning = FALSE, echo = FALSE}
+# cleaning
+covid_t6 <- covid_turnover_tab[[12]] # pull sixth table from list
+covid_t6 <- covid_t6[-c(1:4),] # remove six columns
+covid_t6 <- covid_t6[,-2] %>% as_tibble() # remove empty second column
+names(covid_t6) <- c("industry", "year", "change_18_19", "change_19_20") # rename columns
+x <- str_split(covid_t6$year, " ", simplify = TRUE) %>% as_tibble() # split year, turn into tibble
+covid_t6 <- covid_t6 %>% select(industry) %>% bind_cols(x) # bind_cols from x, which has each year, to original df
+names(covid_t6) <- c("industry", "2018", "2019", "2020") # altering names
+covid_t6 <- covid_t6[-c(2,30,35,36),] # removing superfluous rows: industry, region, and blank rows
+covid_table <- pivot_longer(covid_t6, cols = c("2018", "2019", "2020"), names_to = "year") # tidying year to fit in one column
+```
+
+```{r change data types, echo = FALSE}
+covid_table$industry <- as_factor(covid_table$industry)
+covid_table$year <- as.numeric(covid_table$year)
+covid_table$value <- covid_table$value %>% str_remove_all(., ",")
+covid_table$value <- as.integer(covid_table$value)
+```
+## Plot created after pulling pdf table, cleaning and tidying data 
+```{r plots}
+ct <- covid_table %>% group_by(industry) %>% summarize(value = sum(value)) %>% arrange(desc(value)) 
+  
+ggplot(ct, aes(x = value, y = reorder(industry, -value))) +
+  geom_col(fill = "blue", color = "black") +
+  labs(title = "Cumulative level (thousands) of total separations 
+       from Dec. 2018 Dec. 2020, by industry",
+       caption = "Separations include quits, layoffs 
+       and discharges, and other separations",
+       x = "Level (thousands)",
+       y = "Industries")
+
+```
+
